@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 from sklearn import svm, datasets
 from sklearn.model_selection import train_test_split
@@ -66,6 +67,7 @@ def plot_confusion_matrix(y_true, y_pred, classes,
 
 def quaternion_to_euler(x, y, z, w):
     # Retrieved from https://stackoverflow.com/questions/53033620/how-to-convert-euler-angles-to-quaternions-and-get-the-same-euler-angles-back-fr?rq=1
+    # Returns a radian measurement for roll, pitch, and yaw
     import math
     t0 = +2.0 * (w * x + y * z)
     t1 = +1.0 - 2.0 * (x * x + y * y)
@@ -104,11 +106,32 @@ def add_euler_angles(data):
         eX.append(xx)
         eY.append(yy)
         eZ.append(zz)
-    data['euler_x'] = eX
-    data['euler_y'] = eY
-    data['euler_z'] = eZ
+    data['euler_X'] = eX
+    data['euler_Y'] = eY
+    data['euler_Z'] = eZ
     return data
 
-def velocity_features(features, data):
-    # Function to enhance dataset 'features' with features derived from dataset 'data'
-    
+def add_direction_vectors(data):
+    # Derives unit direction vectors from Euler angles in dataset 'data'
+    roll = data['euler_X'].tolist()
+    pitch = data['euler_Y'].tolist()
+    yaw = data['euler_Z'].tolist()
+    uX, uY, uZ = [],[],[]
+    for i in range(len(roll)):
+        xx = math.cos(yaw[i])*math.cos(pitch[i])
+        yy = math.sin(yaw[i])+math.cos(pitch[i])
+        zz = math.sin(pitch[i])
+    return data
+
+def descriptive_statistics(features, data, stats):
+    # Creates descriptive statistics such as max, min, std. dev, mean, median, etc. from
+    # features 'stats' in dataset 'data' and stores these in 'features'
+    for stat in stats:
+        features[stat + '_min'] = 0
+    return features
+
+def drop_features(data, drops):
+    # Drops a supplied list of dropped features 'drops' from dataset 'data'
+    #for drop in drops:
+        #data[drop].remove
+    return data
