@@ -85,12 +85,23 @@ def quaternion_to_euler(x, y, z, w):
     return X, Y, Z
 
 def normalize(data):
-    # Normalizes the orientation parameters in the quaternion for an input dataset 'data'
+    # Normalizes the direction-dependent parameters for an input dataset 'data'
+    # Specifically, creates unit vectors for orientation, velocity, and acceleration
     data['mod_quat'] = (data['orientation_X']**2 + data['orientation_Y']**2 + data['orientation_Z']**2 + data['orientation_W']**2)**.5
     data['norm_orientation_X'] = data['orientation_X']/data['mod_quat']
-    data['norm_orientation_Y'] = data['orientation_X']/data['mod_quat']
-    data['norm_orientation_Z'] = data['orientation_X']/data['mod_quat']
-    data['norm_orientation_W'] = data['orientation_X']/data['mod_quat']
+    data['norm_orientation_Y'] = data['orientation_Y']/data['mod_quat']
+    data['norm_orientation_Z'] = data['orientation_Z']/data['mod_quat']
+    data['norm_orientation_W'] = data['orientation_W']/data['mod_quat']
+    
+    data['mod_angular_velocity'] = (data['angular_velocity_X']**2 + data['angular_velocity_Y']**2 + data['angular_velocity_Z']**2)**.5
+    data['norm_velocity_X'] = data['angular_velocity_X']/data['mod_angular_velocity']
+    data['norm_velocity_Y'] = data['angular_velocity_Y']/data['mod_angular_velocity']
+    data['norm_velocity_Z'] = data['angular_velocity_Z']/data['mod_angular_velocity']
+    
+    data['mod_linear_acceleration'] = (data['linear_acceleration_X']**2 + data['linear_acceleration_Y']**2 + data['linear_acceleration_Z']**2)**.5
+    data['norm_acceleration_X'] = data['linear_acceleration_X']/data['mod_linear_acceleration']
+    data['norm_acceleration_Y'] = data['linear_acceleration_Y']/data['mod_linear_acceleration']
+    data['norm_acceleration_Z'] = data['linear_acceleration_Z']/data['mod_linear_acceleration']
     return data
 
 def add_euler_angles(data):
@@ -121,15 +132,93 @@ def add_direction_vectors(data):
         xx = math.cos(yaw[i])*math.cos(pitch[i])
         yy = math.sin(yaw[i])+math.cos(pitch[i])
         zz = math.sin(pitch[i])
+        uX.append(xx)
+        uY.append(yy)
+        uZ.append(zz)
+    data['orientation_vector_X'] = uX
+    data['orientation_vector_Y'] = uY
+    data['orientation_vector_Z'] = uZ
     return data
 
-def descriptive_statistics(features, data, stats):
+def eng_data(data):
+    # Creates engineered features within dataset 'data'
+    # Intended for use on the raw X data
+    
+    # Idea 1: Ratios
+    data['ratio_velocity-acceleration'] = data['mod_angular_velocity'] / data['mod_linear_acceleration']
+    
+    return data
+
+def descriptive_features(features, data, stats):
     # Creates descriptive statistics such as max, min, std. dev, mean, median, etc. from
     # features 'stats' in dataset 'data' and stores these in 'features'
-    for stat in stats:
-        features[stat + '_min'] = 0
+    for col in data.columns:
+        if col not in stats:
+            continue
+        # Base statistics
+        colData = data.groupby(['series_id'])[col]
+        features[col + '_min'] = colData.min()
+        features[col + '_max'] = colData.max()
+        features[col + '_std'] = colData.std()
+        features[col + '_mean'] = colData.mean()
+        features[col + '_median'] = colData.median()
+        features[col + '_range'] = features[col + '_max']-features[col + '_min']
     return features
 
+def eng_features(features):
+    # Creates engineered features within dataset 'features'
+    # Intended for use on the modified X data
+    
+    # Idea 1: Dot and cross products of mean unit direction vectors
+    # Note: np.dot and np.cross are very slow to perform on large sets of data,
+    # minimize iterations used of them
+    Ox = features['orientation_vector_X_mean']
+    Oy = features['orientation_vector_Y_mean']
+    Oz = features['orientation_vector_Z_mean']
+    Vx = features['norm_velocity_X_mean']
+    Vy = features['norm_velocity_Y_mean']
+    Vz = features['norm_velocity_Z_mean']
+    Ax = features['norm_acceleration_X_mean']
+    Ay = features['norm_acceleration_Y_mean']
+    Az = features['norm_acceleration_Z_mean']
+    
+    oDv,oDa,vDa = [],[],[]
+    oCv_x,oCv_y,oCv_z = [],[],[]
+    oCa_x,oCa_y,oCa_z = [],[],[]
+    vCa_x,vCa_y,vCa_z = [],[],[]
+    for i in range(len(Ox)):
+        oDv.append(np.dot([Ox[i],Oy[i],Oz[i]],[Vx[i],Vy[i],Vz[i]]))
+        oCv = np.cross([Ox[i],Oy[i],Oz[i]],[Vx[i],Vy[i],Vz[i]])
+        oCv_x.append(oCv[0])
+        oCv_y.append(oCv[1])
+        oCv_z.append(oCv[2])
+        oDa.append(np.dot([Ox[i],Oy[i],Oz[i]],[Ax[i],Ay[i],Az[i]]))
+        oCa = np.cross([Ox[i],Oy[i],Oz[i]],[Vx[i],Vy[i],Vz[i]])
+        oCa_x.append(oCa[0])
+        oCa_y.append(oCa[1])
+        oCa_z.append(oCa[2])
+        vDa.append(np.dot([Vx[i],Vy[i],Vz[i]],[Ax[i],Ay[i],Az[i]]))
+        vCa = np.cross([Ox[i],Oy[i],Oz[i]],[Vx[i],Vy[i],Vz[i]])
+        vCa_x.append(vCa[0])
+        vCa_y.append(vCa[1])
+        vCa_z.append(vCa[2])
+        
+    features['orientation_dot_velocity'] = oDv
+    features['orientation_cross_velocity_X'] = oCv_x
+    features['orientation_cross_velocity_Y'] = oCv_y
+    features['orientation_cross_velocity_Z'] = oCv_z
+    features['orientation_dot_acceleration'] = oDa
+    features['orientation_cross_acceleration_X'] = oCa_x
+    features['orientation_cross_acceleration_Y'] = oCa_y
+    features['orientation_cross_acceleration_Z'] = oCa_z
+    features['velocity_dot_acceleration'] = vDa
+    features['velocity_cross_acceleration_X'] = vCa_x
+    features['velocity_cross_acceleration_Y'] = vCa_y
+    features['velocity_cross_acceleration_Z'] = vCa_y
+    
+    # Idea 2: 
+    return features
+    
 def drop_features(data, drops):
     # Drops a supplied list of dropped features 'drops' from dataset 'data'
     #for drop in drops:
